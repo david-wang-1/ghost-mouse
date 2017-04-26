@@ -21,14 +21,14 @@ char s;
 int i;
 
 //point variables
-int point1x = 0;
-int point1y = 0;
-int point2x = 0;
-int point2y = 0;
-int point3x = 0;
-int point3y = 0;
-int point4x = 0;
-int point4y = 0;
+short point1x = 0;
+short point1y = 0;
+short point2x = 0;
+short point2y = 0;
+short point3x = 0;
+short point3y = 0;
+short point4x = 0;
+short point4y = 0;
 
 //sensitivity
 //Level 5: p0 = 0x96, p1 = 0xFE, p2 = 0xFE, p3 = 0x05
@@ -39,30 +39,33 @@ int sen2 = 0xFE;
 int sen3 = 0x00;
 
 //previous point values
-int prevX = 1023;
-int prevY = 1023;
+short prevX = 1023;
+short prevY = 1023;
 
 //matrices of x and y coordinates from the first camera
-int onex[4];
-int oney[4];
+short onex[4];
+short oney[4];
 
 //matrices of x and y coordinates from prev point
-int prevx[4];
-int prevy[4];
+short prevx[4];
+short prevy[4];
 
 //movement
-const int deadzone = 1;
-const int mouseMoveMult = 3;
-const double mouseMovePwr = 1.4;
+const short deadzone = 1;
+const float mouseMoveMult = 1; //1 for accumulation, 3 for no accum
+const float mouseMovePwr = 1.2; //was 1.2
+const short MOVEMENT_CAP = 10; //working on the computer with 20
+const short VALUES_TO_TOSS = 6;
+short tossedValuesCounter = VALUES_TO_TOSS;
 
 //click state
-const int CLICK_DEAD_ZONE = 20;
-int clickBaseX;
-int clickBaseY;
-int clickDurCount = 0;
+const short CLICK_DEAD_ZONE = 50;
+short clickBaseX;
+short clickBaseY;
+short clickDurCount = 0;
 bool readingClick = false;
-int minLeftClickDur = 0;
-int maxLeftClickDur = 100;
+short minLeftClickDur = 10;
+short maxLeftClickDur = 50;
 
 
 
@@ -95,11 +98,40 @@ DigitalOut myled2(LED2);
 //NOTE: hard coded wait of 0.1
 void mouseCommand(char buttons, short x, short y) {
   
-  x = (x > 0) ? pow(mouseMoveMult*x, mouseMovePwr) : -pow(-mouseMoveMult*x, mouseMovePwr);
+  
+  //x = rint((x > 0) ? powf(mouseMoveMult*( (float) x) , mouseMovePwr) : -powf(-mouseMoveMult*( (float) x) , mouseMovePwr));
+//  y = rint((y > 0) ? powf(mouseMoveMult*( (float) y) , mouseMovePwr) : -powf(-mouseMoveMult*( (float) y) , mouseMovePwr));
+
+  x = mouseMoveMult * ((x > 0) ? powf(( (float) x) , mouseMovePwr) : -powf(-( (float) x) , mouseMovePwr));
+  y = mouseMoveMult * ((y > 0) ? powf(( (float) y) , mouseMovePwr) : -powf(-( (float) y) , mouseMovePwr));
+  
+  if(x>255){
+      x = 255;
+  } else if(x<-255){
+      x = -255;
+  }
+  
+  if(y>255){
+      y = 255;
+  } else if (x<-255){
+      y = -255;
+  }
+  
+ // pc.printf("%hd   ", x);
+ // pc.printf("%hd\n", y);
+  
+//  x = (x > 0) ? powf(( (float) x) , mouseMovePwr) : -powf(-( (float) x) , mouseMovePwr);
+//  y = (y > 0) ? powf(( (float) y) , mouseMovePwr) : -powf(-( (float) y) , mouseMovePwr);
+  
+  
+  //x = mouseMoveMult*x;
+  //y = mouseMoveMult*y;
+  
+  
   //x = x*abs(x);
-  //x = x*sqrt((float)abs(x));
-  y = (y > 0) ? pow(mouseMoveMult*y, mouseMovePwr) : -pow(-mouseMoveMult*y, mouseMovePwr);
   //y = y*abs(y);
+    
+  //x = x*sqrt((float)abs(x));
   //y = y*sqrt((float)abs(y));
   
   keyOut.putc(0xFD);
@@ -137,11 +169,14 @@ void updateMouseState(){
     //click
    if(toLeftClick){
        //send command to 
-       mouseCommand(0x01, 0 , 0);
+       //mouseCommand(0, clickBaseX - onex[0] , clickBaseY - oney[0]);
+       mouseCommand(0x01, 0, 0);
        
-   } else if (toRightClick){
-       mouseCommand(0x02, 0 , 0);
-   }
+   } 
+   //TODO: right click
+   //else if (toRightClick){
+//       mouseCommand(0x02, 0 , 0);
+//   }
     
     //fip clicking to false
     toLeftClick = false;
@@ -156,7 +191,7 @@ void updateMouseState(){
 // previous point (prevx, prevy)
 //TODO: implement additional param to indicate which finger you are looking at
 //      current implementation defaults to zero (finger one)
-void oneFingerResponse(int currx, int curry, int prevx, int prevy){
+void oneFingerResponse(short currx, short curry, short prevx, short prevy){
     //look at delta btwn prev val and current
     //TODO: moving average
     if((prevx != 1023 || prevy != 1023) && (currx != 1023 && curry != 1023)){
@@ -164,8 +199,10 @@ void oneFingerResponse(int currx, int curry, int prevx, int prevy){
         short diffY = -1*(curry - prevy);
     
         //fix diffX
-        if(abs(diffX) > 10) {
-            diffX = 0;
+        if(diffX < -MOVEMENT_CAP) {
+            diffX = -MOVEMENT_CAP;
+        } else if(diffX > MOVEMENT_CAP){
+            diffX = MOVEMENT_CAP;
         } else if(diffX > deadzone){
             diffX -= deadzone;
         } else if (diffX < -1*deadzone){
@@ -173,24 +210,58 @@ void oneFingerResponse(int currx, int curry, int prevx, int prevy){
         } else{
             diffX = 0;
         }
+         
+        
+        
+        
         //fix diffY
-        if(abs(diffY) > 10) {
-            diffY = 0;
+        if(diffY < -MOVEMENT_CAP) {
+            diffY = -MOVEMENT_CAP;
+        } else if (diffY > MOVEMENT_CAP){
+            diffY = MOVEMENT_CAP;    
         } else if(diffY > deadzone){
             diffY -= deadzone;
         } else if (diffY < -1*deadzone){
             diffY += deadzone;
         } else{
             diffY = 0;
-        }
+        } 
+            
+        
+            
+             
+    
+    
+        ////fix diffX
+//        if(abs(diffX) > MOVEMENT_CAP) {
+//            diffX = 0;
+//        } else if(diffX > deadzone){
+//            diffX -= deadzone;
+//        } else if (diffX < -1*deadzone){
+//            diffX += deadzone;
+//        } else{
+//            diffX = 0;
+//        }
+//        //fix diffY
+//        if(abs(diffY) > MOVEMENT_CAP) {
+//            diffY = 0;
+//        } else if(diffY > deadzone){
+//            diffY -= deadzone;
+//        } else if (diffY < -1*deadzone){
+//            diffY += deadzone;
+//        } else{
+//            diffY = 0;
+//        }
         
         
         //mouseCommand(0, (char) diffX, (char) diffY);
         //TODO: this is defaulting to first finger - need to fix this
         //update target position to move x and y
-        updatex[0] = diffX;
-        updatey[0] = diffY;
-        
+        //accumulates the diff until 
+        //updatex[0] = updatex[0] + diffX;
+//        updatey[0] = updatey[0] + diffY;
+        updatex[0] += diffX;
+        updatey[0] += diffY;
        
 //        pc.printf("updating x to : %d", diffX);
 //        pc.printf("\t updating y to : %d \n", diffY);  
@@ -230,7 +301,7 @@ void initCamera(void){
 
 
 //update counts for click 
-void updateClickState(int currx, int curry, int prevx, int prevy){
+void updateClickState(short currx, short curry, short prevx, short prevy){
     bool xStable = false;
     bool yStable = false; 
     
@@ -268,24 +339,36 @@ void updateClickState(int currx, int curry, int prevx, int prevy){
         }
 
         
-    } else if (currx != 1023 && curry != 1023 && prevx == 1023 && prevy == 1023 ){
+    } // rising edge
+    else if (currx != 1023 && curry != 1023 && prevx == 1023 && prevy == 1023 ){
         //finger has been placed on surface
+        
+        //tossedValuesCounter = VALUES_TO_TOSS;
 
         //set reading click to true
         readingClick = true;
+        
+        
 
         //save initial location
         clickBaseX = currx;
         clickBaseY = curry;
 
-    } else if (currx == 1023 && curry == 1023 && readingClick){
+    //} else if (currx == 1023 && curry == 1023 && readingClick){
+    } else if (currx == 1023 && curry == 1023 && prevx == 1023 && prevy == 1023 && readingClick){
         //stable click and finger was removed
 
         //if within bounds, you want to click
         if(clickDurCount > minLeftClickDur &&  clickDurCount < maxLeftClickDur){
             //set state to indicate left click
             toLeftClick = true;
-            pc.printf("********LEFT mouse click \n");
+          //  pc.printf("********LEFT mouse click \n");
+          
+          
+            //toss out accumulations of diffs
+            updatex[0] = 0;
+            updatey[0] = 0;
+          
         }
 
 
@@ -302,8 +385,10 @@ void updateClickState(int currx, int curry, int prevx, int prevy){
 //populates onex and oney with values depending on the measured points
 //NOTE: 1023 means nothing was detected
 void readCameraData(void){
-        
-    //pc.printf("in read camera data \n");
+    //update previous values
+    //only updates for finger 1
+    prevX = onex[0];
+    prevY = oney[0];
         
     //request data from camera 
     char out[1];
@@ -326,13 +411,22 @@ void readCameraData(void){
     
     //>>>>>>>>>>>>>>>>>Begin unfinished code for moving 
 
-    oneFingerResponse(onex[0], oney[0], prevX, prevY);    
+    //if(tossedValuesCounter > 0){
+//        tossedValuesCounter -= 1;    
+//    }else{
+//        oneFingerResponse(onex[0], oney[0], prevX, prevY);        
+//    }
+    if(!readingClick){
+        oneFingerResponse(onex[0], oney[0], prevX, prevY);            
+    }
+    
+    
     updateClickState(onex[0], oney[0], prevX, prevY);
     
     
-    //update prev values
-    prevX = onex[0];
-    prevY = oney[0];
+    // //update prev values
+    // prevX = onex[0];
+    // prevY = oney[0];
     
     
     //<<<<<<<<<<<<<<<<End unfinished code for moving averages
@@ -370,10 +464,10 @@ void readCameraData(void){
 
 //print to serial monitor the coordinates of the points stored in
 //the passed x and y arrays
-void printCamData(int xcor[4], int ycor[4]){
+void printCamData(short xcor[4], short ycor[4]){
     for(int i = 0; i<4; i++){
-        int x = xcor[i];
-        int y = ycor[i];
+        short x = xcor[i];
+        short y = ycor[i];
         //determine what to print
         //x coordinate
         pc.printf(" %d,", x);
@@ -397,8 +491,10 @@ int main() {
     camera1.frequency(400000);
     
     //set values initially to zero
-    updatex[0] = 0;
-    updatey[0] = 0;
+    for(int i = 0; i < 4; i++){
+        updatex[i] = 0;
+        updatey[i] = 0;
+    }
     
     myled = 0;
     myled2 = 0;
@@ -446,7 +542,7 @@ int main() {
 //        pc.printf("\tclick right %s\n", toRightClick ? "true" : "false");
         
         //print points
-        printCamData(onex, oney);  
+        //printCamData(onex, oney);  
         
         
         
@@ -454,7 +550,7 @@ int main() {
         
         
         //uncomment below to test infinite print
-        //keyOut.putc(0x41);
+//        keyOut.putc(0x41);
         
         //uncomment below to infinitely move mouse in a square
 //        double delay = 0.1;
